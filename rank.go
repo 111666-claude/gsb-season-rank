@@ -1,5 +1,4 @@
 // Package seasonrank 计算赛季排行榜与积分衰减。
-// 缺陷：名次用下标 +1（同分不同名次）、衰减只看前 10 名、分页排序不稳定。
 package seasonrank
 
 import (
@@ -20,10 +19,11 @@ type Entry struct {
 	Rank  int
 }
 
-// Rank 缺陷：名次直接取下标 +1，同分玩家拿到不同名次。
+// Rank 按 (分数降序, 名字升序) 全序排序后打名次：
+// 同分玩家拿同一个名次，下一个名次跳号（标准竞赛排名 1,1,3,3）。
 func Rank(players []Player) []Entry {
 	sorted := append([]Player(nil), players...)
-	sort.SliceStable(sorted, func(left, right int) bool {
+	sort.Slice(sorted, func(left, right int) bool {
 		if sorted[left].Score != sorted[right].Score {
 			return sorted[left].Score > sorted[right].Score
 		}
@@ -31,23 +31,41 @@ func Rank(players []Player) []Entry {
 	})
 	entries := make([]Entry, 0, len(sorted))
 	for index, player := range sorted {
-		entries = append(entries, Entry{Name: player.Name, Score: player.Score, Rank: index + 1})
+		rank := index + 1
+		if index > 0 && player.Score == sorted[index-1].Score {
+			rank = entries[index-1].Rank
+		}
+		entries = append(entries, Entry{Name: player.Name, Score: player.Score, Rank: rank})
 	}
 	return entries
 }
 
-// Decay 缺陷：只对前 10 名做衰减。
+// Decay 统计所有超过 idleDays 天未上线的玩家。
 func Decay(players []Player, idleDays int) int {
 	decayed := 0
-	for index, player := range players {
-		if index >= 10 {
-			break
-		}
+	for _, player := range players {
 		if player.IdleDays > idleDays {
 			decayed++
 		}
 	}
 	return decayed
+}
+
+// Page 返回排行榜的第 page 页（从 1 开始），每页 size 条。
+// 排行榜本身按 (分数降序, 名字升序) 全序排序，切片不会重复或漏项。
+func Page(entries []Entry, page, size int) []Entry {
+	if page < 1 || size < 1 {
+		return nil
+	}
+	start := (page - 1) * size
+	if start >= len(entries) {
+		return nil
+	}
+	end := start + size
+	if end > len(entries) {
+		end = len(entries)
+	}
+	return entries[start:end]
 }
 
 // Ties 样本：两组同分。
